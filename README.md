@@ -15,4 +15,3 @@ The second part of the analysis we use:
 https://www.kaggle.com/datasets/ashishgup/netflix-rotten-tomatoes-metacritic-imdb
 -	This dataset combines various data sources from Netflix, Rotten Tomatoes, IMBD, and others.
 -	It includes summaries and commentaries on contents that we used  to conduct NLP analysis. 
-![image](https://user-images.githubusercontent.com/99461331/166838134-6c872c0e-48df-4b0a-8116-829ca7e044c1.png)
