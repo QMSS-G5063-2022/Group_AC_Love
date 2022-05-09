@@ -1,0 +1,582 @@
+---
+title: "Netflix and its history"
+author: "Group AC: Xinran Li, Yunxuan Liao, Silu Ruan, Wenyi Xu"
+date: "5/4/2022"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    toc: true
+---
+
+
+# Introduction
+This project studies Netflix's coverage of movies and TV shows, containing two parts: the general trends as well as summary text analysis. 
+
+
+
+# Analysis
+
+## General Trends
+In the first part, we analyze products' change on Netflix and we look into characteristics of each country's products, popular movie and TV shows genres, products' duration change over time, and products' rating guidelines. We seek to find Netflix's characteristics in terms of a streaming platform through detailed products analysis. 
+
+
+### History of Netflix's TV shows and movies
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(leaflet)
+library(plotly)
+data <- read.csv("netflix_titles.csv")
+data$date_added <- mdy(data$date_added)
+p=  data %>% 
+  mutate(year=year(date_added), month=month(date_added)) %>%
+  group_by(year,type) %>% 
+  summarise(count=n())   %>%
+  ggplot(aes(x=year, y=count, fill=type)) + geom_col(position = position_dodge()) +
+  labs(y="Number") +
+  scale_fill_manual(values = c("black", "dark red")) +
+  scale_color_manual(values = c("black", "dark red"))  +
+  labs(title="Movies and TV Shows added on Netflix over time")
+ggplotly(p)
+```
+
+This graph indicates that largely more movies are being added to Netflix than TV shows, especially from 2017 to 2020, which implies Netflix's continued interest in expanding its movie contents, and focus on offering various genres of movie. 
+
+
+
+### Netflix by Countries
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df <- data %>%
+  separate_rows(country, sep=", ") %>%
+  group_by(country, type) %>% 
+  summarise(count=n()) %>%
+  spread(key=type, value=count, fill=0)  %>%
+  filter(country!="") %>%
+  mutate(total=Movie+`TV Show`)
+
+world <- map_data("world") %>% group_by(region) %>%
+  summarise(long=mean(long), lat=mean(lat)) %>%
+  rename(country=region)
+world$country[world$country=="USA"] <- "United States"
+world$country[world$country=="UK"] <- "United Kingdom"
+world %>% inner_join(df) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(~long, ~lat, popup = ~paste0("Country:", country, "<br>",
+                                  "TV Show:", `TV Show`, "<br>",
+                                  "Movie:", Movie),
+                    radius = ~log(total))
+```
+
+
+We plotted an interactive world map showing each countries’ production of movies and TV shows. Upon click on a point on the above map, the map will exhibit the country name, the number of movie production, and TV show production. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df <- data %>%
+  separate_rows(country, sep=", ") %>%
+  group_by(country, type) %>% 
+  summarise(count=n()) %>%
+  spread(key=type, value=count, fill=0)  %>%
+  filter(country!="") %>%
+  mutate(total=Movie+`TV Show`)
+
+world <- map_data("world") 
+world$region[world$region=="USA"] <- "United States"
+world$region[world$region=="UK"] <- "United Kingdom"
+p = world %>% left_join(df, by=c("region"="country")) %>%
+  mutate(total=ifelse(is.na(total), 0, total)) %>%
+  ggplot(aes(x=long, y=lat, group=group, fill=total, label=region)) + geom_polygon(color="white") +
+  scale_fill_distiller(palette = "RdBu") +
+  labs(title="Country's Total Production of Movies and TV Shows")
+ggplotly(p)
+```
+
+
+We also produce this map, in which we use different colors showing each country's total productions. Dark red represents the highest number of toal production, while dark blue represents the lowest number of total production. We can find that United States has the highest production in the world.
+
+
+
+
+### TOP 20 in production
+
+Below a data table of the top 20 countries with highest total number of production in descending order.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+top20 <- data %>% separate_rows(country, sep=",") %>%
+  group_by(country, type) %>% summarise(count=n()) %>%
+  spread(key=type, value=count, fill=0) %>%
+  filter(country!="") %>%
+  mutate(total=Movie+`TV Show`) %>%
+  arrange(desc(total)) %>% head(20)
+top20
+```
+
+
+#### TOP 20 Production Types
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p = top20 %>% 
+  gather(key=Type, value=Count, Movie:`TV Show`) %>%
+  ggplot(aes(x=Count, y=reorder(country,Count))) + 
+  stat_summary(aes(fill = Type), geom="bar",fun.y=mean) +
+  scale_fill_manual(values = c("black", "dark red")) +
+  labs(x="Count", y="Country",title="Production Details among Top 20 Countries")
+ggplotly(p)
+```
+
+
+United States is the country which have most productions. India's total productions is the second place, but such ranking primarily depends on the number of its movie production.
+
+
+
+### Frequent Categories
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data %>% separate_rows(listed_in, sep=", ") %>%
+  group_by(listed_in, type) %>% summarise(count=n()) %>%
+  arrange(desc(count)) %>%
+  group_by(type) %>% 
+  slice_max(order_by = count, n=5) %>%
+   ggplot(aes(x = fct_reorder(listed_in, count), y = count))+ 
+      stat_summary(aes(fill = type), geom="bar",fun.y=mean) +
+      scale_fill_manual(values = c("black", "dark red")) +
+      xlab("Genre") +
+      ylab("Number") +
+      facet_wrap(~type, scales = "free") +
+      coord_flip() +
+  labs(title="Top 5 Popular Genres")
+```
+
+
+Top 3 genres are the same for both Movies and TV shows. Movies are more intended for adults, while TV shows are more intended for teens and kids, as there are a spefic genre of shows produced specifically for children.
+
+
+### Duration
+
+This plot shows the distribution of duration for movies and TV shows. The majority of movies lasts around 100 minutes, and the majority of TV shows has one season. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p = data %>% mutate(duration=parse_number(duration)) %>%
+  ggplot(aes(x=duration,fill=type)) + 
+  scale_fill_manual(values = c("black", " dark red")) +
+  geom_histogram() +
+  facet_wrap(~type, scales = "free") +
+  labs(title="Duration Distribution for Movie and TV Show")
+ggplotly(p)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+top5 <- data %>% separate_rows(listed_in, sep=", ") %>%
+  group_by(listed_in, type) %>% summarise(count=n()) %>%
+  arrange(desc(count)) %>%
+  group_by(type) %>% 
+  slice_max(order_by = count, n=5) 
+p = data %>% separate_rows(listed_in, sep=", ") %>%
+  filter(listed_in %in% top5$listed_in) %>%
+  mutate(duration=parse_number(duration)) %>%
+  group_by(listed_in, type) %>%
+  summarise(avg=mean(duration)) %>%
+  ggplot(aes(x=listed_in, y=avg, fill=type)) + geom_col() +
+  facet_wrap(~type, scales="free") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values = c("black", " dark red")) +
+  labs(y="Average duration", x="Genre") +
+  labs(title="Duration Distribution for Top 5 Genres")
+ggplotly(p)
+```
+
+
+This plot specifically displays the average duration of top 5 genres for movies and TV shows.Dramas has the highest average duration among movies, and comedies has the highest duration of 2.19 seasons among TV shows.
+
+
+### Duration changes
+
+Below is a visualization of duration change over time for top 5 genres of each type. Dots are movies and triangles are TV shows.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data %>% separate_rows(listed_in, sep=", ") %>% 
+  filter(listed_in %in% top5$listed_in) %>%
+  mutate(duration=parse_number(duration))  %>%
+  ggplot(aes(x=release_year, y=duration, color=listed_in, shape=type)) +
+  geom_point(show.legend = F) +
+  facet_wrap(~listed_in, scales = "free") +
+  labs(title="Top 5 Genres' Duration Over time")
+```
+
+
+For movies, there is a downward sloping trend that today's movies tend to have a shorter duration. For TV shows, there is a upward sloping trend that an increasing number of tv shows has longer duration. The plots of different TV shows genres are more scattered than that those of movies.
+
+
+### Rating Distribution
+
+Below is a bar graph of rating distribution of both movies and TV shows.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p = data %>% group_by(type, rating) %>% summarise(count=n()) %>%
+  filter(rating!="") %>%
+  ggplot(aes(x=count, y=reorder(rating,count))) +
+  stat_summary(aes(fill = type), geom="bar",fun.y=mean) +
+  scale_fill_manual(values = c("black", "dark red")) +
+  labs(x="Count", y="Rating",title="Rating Distribution for Movies and TV Shows")
+ggplotly(p)
+```
+
+
+Most movies and TV shows listed in Netflix have a TV Parental Guidelines of TV-MA, suggesting the content is for mature audiences and may not suitable for age 17 and under. A number of movies also has a rating of R, suggesting that the content is restricted and may be inappropriate for ages 17 and under.
+
+
+
+
+### TOP 10 vs. Rating Categories
+
+Below is a graph showing the proportion of each rating categories for the top 20 countries. 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+top10 <- top20 %>% 
+  arrange(desc(total)) %>% head(10)
+p = data %>% filter(country %in% top10$country) %>% group_by(rating, country) %>%
+  summarise(count=n()) %>% filter(rating!="") %>%
+  ggplot(aes(x=rating, y=count, fill=country)) + geom_col(color="white") +
+  scale_fill_discrete()
+ggplotly(p)
+```
+
+
+We can observe that most of India's production is TV-14, suggesting that their productions are for audiences older than 14, while most of the United States' productions are TV-MA, telling that US productions are for audiences older than 17. The content of the United states' productions is likely to include more violence, sex, adult language, nudity, or substance use.
+
+
+
+### Directors
+
+Below is an interactive map that shows each country's number of directors. Upon clicking on a point on the map will show the country name and number of directors.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df <- data %>% separate_rows(director, sep=", ") %>%
+  separate_rows(country, sep=", ") %>%
+  group_by(country) %>% summarise(count=n()) %>%
+  filter(country!="") %>%
+  arrange(desc(count)) 
+world <- map_data("world")
+world$region[world$region=="USA"] <- "United States"
+world$region[world$region=="UK"] <- "United Kingdom"
+p = world %>% left_join(df, by=c("region"="country")) %>%
+  mutate(total=ifelse(is.na(count), 0, count)) %>%
+  ggplot(aes(x=long, y=lat, group=group, fill=count, label=region)) + geom_polygon(color="white") +
+  scale_fill_distiller(palette = "RdBu") +
+  labs(title="Number of Directors across Countries")
+ggplotly(p)
+```
+
+Different colors indicates different number each country has with dark red highlighting the country with more than 3000 directors, dark blue highlighting the country with less than 150 directors and grey suggest that this country has no directors in this dataset.
+
+
+
+### Conlcusion 
+In the global industry of online entertainment, Netflix has been a market leader in providing video streaming services, with 183 million paid members in over 190 countries and a wide variety of genres in different languages. After analyzing the traits of movies and TV shows, as well as the total number of production across country over time, we conclude that Netflix is contentiously trying to increase productions, and generate news contents of various genres as growth strategy to maintain existing subscribers and attract new audiences.
+
+
+***
+
+***
+
+
+## NLP Topics
+Beyond examining the distribution of production on Netflix TV series and Movies, this project will aim to provide insight on key characteristics that contribute to being a "high rated" show (including both TV series and Movies). More specifically, the second part of the project will utilize natural language processing to look at word cloud for show summaries, compare most frequently appeared words between all shows and high rated shows, compare Flesch Kincaid score with ratings, as well as with the subcategories of TV series and Movies. The purpose of this project is to provide an overview of the dynamic on Netflix and possible suggestions that could increase a shows probability of having a high IMDb score. 
+
+### Summaries Word Cloud
+
+First, we decide to define a high IMDb rating standard.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+netflix <- read.csv("netflix-rotten-tomatoes-metacritic-imdb.csv")
+library(magrittr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+summary(netflix)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(netflix, aes(x="", y=IMDb.Score)) + geom_boxplot()+ggtitle("Rating Boxplot")
+```
+
+Through the summary as well as the boxplot, I decide to use 7.3 as a standard for high IMDb score, because it is above 3rd percentile.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tm)
+library(textstem)
+
+removeNumPunct <- function(x){gsub("[^[:alpha:][:space:]]*", "", x)}
+clean_corpus <- function(corpus){
+  corpus <- removeNumPunct(corpus)
+  corpus <- tolower(corpus)
+  corpus <- removeWords(corpus, stopwords("en"))
+  corpus <- removeNumbers(corpus)
+  corpus <- stripWhitespace(corpus)
+  corpus <- removePunctuation(corpus)
+  corpus <- lemmatize_strings(corpus)
+  corpus <- stemDocument(corpus)
+  return(corpus)
+}
+netflix_cleaned <-netflix
+netflix_cleaned$Summary <- clean_corpus(netflix$Summary)
+```
+
+#### All shows
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+netflix_cleaned_corpus <- Corpus(VectorSource(netflix_cleaned$Summary))
+dtm <- TermDocumentMatrix(netflix_cleaned_corpus)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+#head(d, 10)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(wordcloud)
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+
+After all the necessary steps such as cleaning and stemming, we create a word cloud that shows all shows summaries on Netflix. The most common word used is "life". 
+
+
+#### High rating shows
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+netflix_high_rating <- netflix_cleaned %>% filter(IMDb.Score>=7.3) %>% as.data.frame
+
+netflix_high_rating_corpus <- Corpus(VectorSource(netflix_high_rating$Summary))
+dtm2 <- TermDocumentMatrix(netflix_high_rating_corpus)
+m2 <- as.matrix(dtm2)
+v2 <- sort(rowSums(m2),decreasing=TRUE)
+d2 <- data.frame(word = names(v2),freq=v2)
+#head(d2, 10)
+
+set.seed(1234)
+wordcloud(words = d2$word, freq = d2$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+
+
+When only looking at shows with high rating, the word cloud appears to be similar as the graph before, which looks at all shows. "life" is still the most frequently appeared word, with a few other words overlapping, such as "young", "friend", "love","man". The only difference between the top 10 common words is that "woman" is top 10 common in all shows, while "world" is top 10 common in high rating shows. This might suggest that the shows not mentioning "woman" in the summary are more likely to receive higher score. Taking account that according to IMDb's official statistics that show breakdown of ratings by gender, almost every show receives about 5 times more rating counts from male users, the platform is extremely male orientated. This word cloud might suggest that because the platform have more male users, these users tend to give high score for shows that doesn't show the word "woman" and prefer non-feminine words like "world". 
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tm)
+library(textstem)
+library(tidytext)
+library(wordcloud)
+library(plotly)
+nfk <- read.csv("nfk.csv")
+netflix <- read.csv("netflix-rotten-tomatoes-metacritic-imdb.csv")
+```
+
+#### Series and Movies comparison
+
+
+Then, we decide to create a comparison and a commonality cloud showing the most-frequent series and movies words
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+series <- netflix %>% filter(Series.or.Movie == "Series")
+series_summary <- paste(series[, "Summary"], collapse = " ")
+series_summary <- series_summary %>%
+  tolower() %>%
+  removePunctuation() %>%
+  removeNumbers() %>%
+  stripWhitespace() %>%
+  removeWords(., stopwords("en")) %>%
+  lemmatize_strings()
+
+movie <- netflix %>% filter(Series.or.Movie == "Movie")
+movie_summary <- paste(movie[, "Summary"], collapse = " ")
+movie_summary <- movie_summary %>%
+  tolower() %>%
+  removePunctuation() %>%
+  removeNumbers() %>%
+  stripWhitespace() %>%
+  removeWords(., stopwords("en")) %>%
+  lemmatize_strings()
+
+summary_all <- list(series_summary, movie_summary)
+
+summary_all_tdm <- TermDocumentMatrix(Corpus(VectorSource(summary_all), readerControl = list(language = "en")))
+summary_all_tdm <- as.matrix(summary_all_tdm)
+colnames(summary_all_tdm) <- c("Series Summary", "Movie Summary")
+
+commonality.cloud(summary_all_tdm, colors = c("black", "darkred"), max.words = 100)
+```
+
+
+Words like "life", "young", "family", "love", and "new" are high frequent and common words among both series and movie summaries.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+comparison.cloud(summary_all_tdm, colors = c("black", "darkred"),
+                 scale=c(0.1,2), title.size= 1, max.words = 100)
+```
+
+
+
+Movie summaries have more pronouns, such as "girlfriend", "mother", "son", "wife", and "father"; while series summaries tend to have verbs, such as "follow", "navigate", "show", "explore", and "host".
+
+
+### Summary Words and Ratings 
+
+We then created a pyramid plot to show the words between movies’ description with high rating and low rating differ in frequency 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+netflix_low_rating <- netflix_cleaned %>% filter(IMDb.Score<7.3) %>% as.data.frame
+netflix_low_rating_corpus <- Corpus(VectorSource(netflix_low_rating$Summary))
+netflix_low_rating_tdm <- TermDocumentMatrix(netflix_low_rating_corpus)
+netflix_high_rating_tdm <- TermDocumentMatrix(netflix_high_rating_corpus)
+
+require(quanteda)
+require(quanteda.textstats)
+netflix_high_rating_dfm <- dfm(corpus(netflix_high_rating_corpus))
+netflix_low_rating_dfm <- dfm(corpus(netflix_low_rating_corpus))
+netflix_bind_dfm <- rbind(netflix_high_rating_dfm, netflix_low_rating_dfm)
+netflix_common <- textstat_keyness(netflix_bind_dfm,target =seq_len(ndoc(netflix_high_rating_dfm)))
+
+top_6 <-netflix_common %>% mutate(calculate = abs(n_target-n_reference)) %>% arrange(-calculate) %>% slice(1:6)
+#top_6
+
+library(plotrix)
+p <- pyramid.plot(top_6$n_target, top_6$n_reference,top_6$feature,
+             gap = 70,
+             top.labels = c("High Rated", " ", "Low Rated"),
+             main = "Words in Common",
+             laxlab = NULL,
+             raxlab = NULL,
+             unit = NULL,
+             labelcex=0.5,
+             lxcol="black",
+             rxcol="black")
+```
+Due to there are more low rating shows than high rating shows, high rating shows naturally have less word frequencies. So when high rating shows have specific words that appear more than low rating shows, the percentage is significantly larger.
+
+
+### Summary Readability & Ratings
+
+Knowing that the higher the FRE score, the easier to understand; and the lower the FRE score, the harder to understand. A 0-30 score range is usually for college graduates, which are very difficult to read and best understood by university graduates.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+allsummary <- paste(netflix[, "Summary"], collapse = " ")
+
+require(quanteda.textstats)
+text <- textstat_readability(allsummary, 
+        measure=c('Flesch','Flesch.Kincaid',
+                  'meanSentenceLength','meanWordSyllables'))
+options(digits = 4)
+text
+```
+
+Treating all summary text as a single document, we receive a 11.53 Flesch Kincaid Score, 21.8 Average Sentence Length for each summary and 1.577 Average Word Syllables.
+
+#### FRE vs. IMDb Score
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+require(quanteda)
+require(dplyr)
+require(quanteda.textstats)
+corpus2 <- corpus(netflix_cleaned$Summary)
+FRE_netflix <- textstat_readability(corpus2,
+              measure=c('Flesch.Kincaid'))
+
+netflix_readability <- cbind(netflix_cleaned, FRE_netflix$Flesch.Kincaid)
+names(netflix_readability)[30] <- 'Flesch.Kincaid'
+
+readability1 <- plot(netflix_readability$IMDb.Score, netflix_readability$Flesch.Kincaid, main="Flesch.Kincaid vs. IMDb Score",
+   xlab="IMDb Score", ylab="Flesch.Kincaid", pch=19)
+
+readability1
+```
+
+
+From the graph above it seems like there is no obvious correlation between Flesch Kincaid score and IMDb Score as most of the Flesch Kincaid score is concentrated in the middle. However it could be seen that when the IMDb score is over 6, a few Flesch Kincaid score appears out of the crowed to be higher than average. The phenomenon, yet, diminishes when the IMDb score is above 9. 
+
+A useful insight from this graph is that for low rating shows below 3, the Flesch Kincaid score is for sure below 15. So having higher Flesch Kincaid score will increase the chance of receiving IMDb score above 3, however it doesn't garuantee how high the IMDb score can reach. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+nfk$FRE <- textstat_readability(nfk[, "Summary"], measure=c('Flesch.Kincaid'))[[2]]
+
+fre_imdb <- nfk %>%
+  plot_ly(x = ~IMDb.Score, y = ~FRE, color = ~Series.or.Movie, type = "scatter", colors = c("#8b0000", "black"))
+
+fre_imdb %>%
+  layout(title = "IMDb Score with Summary FRE Scores", xaxis = list(title = "IMDb Score"), yaxis = list(title = "FRE Score"))
+```
+
+
+
+In order to draw more insights from this relationship, we decide to take a closer look by categorizing movies and series. Of the movies and series with a 10-15 FRE scores, it is more likely for them to receive a higher IMDb Score.
+
+#### FRE vs. IMDb Votes
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+fre_votes <- nfk %>%
+  plot_ly(x = ~IMDb.Votes, y = ~FRE, color = ~Series.or.Movie, type = "scatter", colors = c("#8b0000", "black"))
+
+fre_votes %>%
+  layout(title = "IMDb Votes with Summary FRE Scores", xaxis = list(title = "IMDb Votes"), yaxis = list(title = "FRE Score"))
+```
+
+
+
+The 10-15 range of summary FRE score tend to have the potential to receive a high IMDb Votes. It is also fair to say that high quality production movies or series tend to write their summaries at a range of 10-15, which is for college graduates level.
+
+
+
+#### FRE vs. High Ratings 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+netflix_high_rating_corpus2 <- corpus(netflix_high_rating$Summary)
+FRE_netflix_high <- textstat_readability(netflix_high_rating_corpus2,
+              measure=c('Flesch.Kincaid'))
+
+netflix_readability_high <- cbind(netflix_high_rating, FRE_netflix_high$Flesch.Kincaid)
+names(netflix_readability_high)[30] <- 'Flesch.Kincaid'
+
+readability2 <- plot(netflix_readability_high$IMDb.Score, netflix_readability_high$Flesch.Kincaid
+, main="Flesch.Kincaid vs. IMDb Score
+",
+   xlab="IMDb Score", ylab="Flesch.Kincaid", pch=19)
+
+readability2
+```
+
+
+For these high rating shows, the Flesch Kincaid score ranges a lot. Interestingly, the Flesch Kincaid score starts to decrease when the IMDb score is above 8.5. The lower limit for shows with rating above 9 also starts to increase, shrinking the range of Flesch Kincaid score. It can be interpreted that Flesch Kincaid score ranging from 7~17 is more likely to receive IMDb score above 9. 
+
+
+#### FRE vs. Release Date
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+fre_time <- nfk %>%
+  group_by(Release.Date) %>%
+  plot_ly(x = ~Release.Date, y = ~FRE, color = ~Series.or.Movie, type = "scatter", colors = c("#8b0000", "black"))
+fre_time %>%
+  layout(title = "Time Series with Summary FRE Scores", xaxis = list(type = 'date', tickformat = "%d %B<br>%Y", title = "Time"), yaxis = list(title = "FRE Score"))
+```
+Towards recent years, the FRE Scores start to expand: from largely around 10-15 in year 1980 to a range of 5-10 in year 2020.
+
+
+### Conclusions
+
+To conclude on the second part of the project, a few characteristics that are associated with high rating shows on Netflix can be summarized as following: The summary of the show is 1) less feminine without the word "women"; 2) have Flesch Kincaid score above 15 to receive above average IMDb score and below 17 to have a high IMDb score, and 3) movies with high Flesch Kincaid score are more likely to receive a high IMDb score. These information could be utilized by future producers to gain higher ratings on Netflix. 
+
+# Citation
+code reference: http://www.sthda.com/english/wiki/text-mining-and-word-cloud-fundamentals-in-r-5-simple-steps-you-should-know
